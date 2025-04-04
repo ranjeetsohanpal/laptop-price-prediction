@@ -1,58 +1,73 @@
-from flask import Flask, render_template, request
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import pickle
 import numpy as np
 
 app = Flask(__name__)
+CORS(app)
 
-# Load the model and data
-with open('pipe.pkl', 'rb') as f:
+# Load the trained model and dataset
+with open("pipe.pkl", "rb") as f:
     model = pickle.load(f)
-with open('train_df.pkl', 'rb') as f:
+with open("train_df.pkl", "rb") as f:
     df = pickle.load(f)
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
+# Extract unique values for dropdowns
+dropdown_options = {
+    "companies": df["Manufacturer"].unique().tolist(),
+    "categories": df["Category"].unique().tolist(),
+    "cpus": df["cpu_brand"].unique().tolist(),
+    "gpus": df["gpu_brand"].unique().tolist(),
+    "oss": df["os"].unique().tolist(),
+    "rams": sorted(df["RAM"].unique().tolist()),  
+    "hdds": sorted(df["HDD"].unique().tolist()),  
+    "ssds": sorted(df["SSD"].unique().tolist()),  
+    "touchscreen" : ["Yes", "No"],
+    "ips_panel" : ["Yes", "No"],
+}
 
-    # GET request
-    companies = df['Manufacturer'].unique()
-    categories = df['Category'].unique()
-    cpus = df['cpu_brand'].unique()
-    gpus = df['gpu_brand'].unique()
-    oss = df['os'].unique()
-    if request.method == 'POST':
-        # Extract features from form input
-        company = request.form['company']
-        category = request.form['category']
-        ram = int(request.form['ram'])
-        weight = float(request.form['weight'])
-        touchscreen = 1 if request.form['touchscreen'] == 'Yes' else 0
-        ips = 1 if request.form['ips'] == 'Yes' else 0
-        screen_size = float(request.form['screen_size'])
-        res_height = int(request.form['res_height'])
-        res_width = int(request.form['res_width'])
-        cpu = request.form['cpu']
-        hdd = int(request.form['hdd'])
-        ssd = int(request.form['ssd'])
-        gpu = request.form['gpu']
-        os = request.form['os']
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"message": "Laptop Price Prediction API is running!"})
 
-        # Compute PPI
+@app.route("/options", methods=["GET"])
+def get_options():
+    return jsonify(dropdown_options)
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    try:
+        data = request.json  # Receive JSON data from React
+
+        # Extract features
+        company = data["company"]
+        category = data["category"]
+        ram = int(data["ram"])
+        weight = float(data["weight"])
+        touchscreen = 1 if data["touchscreen"] == "Yes" else 0
+        ips = 1 if data["ips"] == "Yes" else 0
+        screen_size = float(data["screen_size"])
+        res_height = int(data["res_height"])
+        res_width = int(data["res_width"])
+        cpu = data["cpu"]
+        hdd = int(data["hdd"])
+        ssd = int(data["ssd"])
+        gpu = data["gpu"]
+        os = data["os"]
+
+        # Pixels per inch feature calculation
         ppi = ((res_width**2) + (res_height**2))**0.5 / screen_size
 
         # Create feature array
-        features = np.array([[company,category, ram, weight, touchscreen, ips, ppi, cpu, hdd, ssd, gpu, os]])
+        features = np.array([[company, category, ram, weight, touchscreen, ips, ppi, cpu, hdd, ssd, gpu, os]])
 
         # Predict price
-        predicted_price = int(np.exp(model.predict(features)[0]))
+        predicted_price = int(np.exp(model.predict(features)[0]))  # Exponential transformation if applied
 
-        return render_template('index.html', predicted_price=predicted_price, companies=companies, categories=categories, 
-                               cpus=cpus, gpus=gpus, oss=oss,selected_company=company, selected_category=category, selected_cpu=cpu,
-                               selected_gpu=gpu, selected_os=os,selected_ram = ram,selected_wt = weight,selected_touch = touchscreen,selected_ips = ips
-                               ,selected_ss = screen_size,selected_res_ht = res_height,selected_res_wd = res_width,selected_hdd = hdd,
-                               selected_ssd = ssd)
-    else:
-        
-        return render_template('index.html', companies=companies, categories=categories, cpus=cpus, gpus=gpus, oss=oss)
+        return jsonify({"predicted_price": predicted_price})
 
-if __name__ == '__main__':
-    app.run(debug=True)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
